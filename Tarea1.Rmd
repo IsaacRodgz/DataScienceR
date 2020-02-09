@@ -1,0 +1,89 @@
+---
+title: "Tarea 1"
+output: html_notebook
+---
+
+Se incluyen bibliotecas y se leen los datos
+
+```{r}
+library(tidyverse)
+library(ggfortify)
+
+do <- read.table("hepatlon (1)")
+d <- read.table("hepatlon (1)")
+
+# Se filtra columna 'score'
+
+d <- d[, -8]
+```
+
+Se calcula la varianza por cada atributo. De donde se observa que hay atributos con mucha variabilidad como en run800m y javelin, y al mismo tiempo, atributos como highjump o longjump con variabilidad muy pequeña. Por lo que será conveniente escalarlos para que tengan varianza 1.
+
+```{r}
+sapply(d, var)
+```
+
+De la siguiente gráfica de barras, podemos ver que la competidora Joyner-Kersee tiene el mayor puntaje.
+
+```{r}
+par(mar=c(8,5,1,1))
+barplot(height = do$score, names.arg = row.names(do), horiz = FALSE, las = 3, cex.names = 0.8, ylab = "Score")
+```
+
+Se aplica PCA sobre la matriz de datos (centrados y escalados). Donde se observa que la varianza explicada sólamente con los 2 primeros componentes principales, es del 80.78%. Es decir, el 80.78% de la varianza en los datos se concentra en 2 de las columnas de los datos.
+
+```{r}
+prin_comp <- prcomp(d, scale = TRUE, center = TRUE)
+summary(prin_comp)
+```
+
+A continuación se muestra la matriz de rotación o de loadings. Si tomamos el primer componente principal (PC1), y agrupamos las entradas de acuerdo al signo, vemos que se están juntando atributos que miden el desempeño en unidades de distancia, con signo negativo, y atributos que miden desempeño en unidades de tiempo, con signo positivo. Además, dentro de las competencias que miden distancias, la que más importancia tiene es la prueba de longjump o salto de longitud. Mientras que dentro de las pruebas que miden tiempo, la que más importancia tiene es la prueba de hurdles o carrera con obstáculos.
+
+
+```{r}
+prin_comp
+```
+
+Mediante la función predict() podemos proyectar los datos en los componentes principales. Consideremos la proyección de cada uno de los datos sobre el primer componente principal (PC1).
+
+```{r}
+predict(prin_comp)[,1]
+```
+
+Si visualizamos una comparación de los datos proyectados en la dirección de PC1 y el score dado en el dataset original para cada competidor, vemos que están altamente correlacionados. Donde la competidora Joyner-Kersee, quien tiene el mayor puntaje, resulta con el valor más pequeño en la proyección sobre el PC1. Por lo que el valor de PC1 de cada dato podría servir como un buen predictor del puntaje o desempeño en el heptatlón de cada competidora.
+
+```{r}
+plot(x = do$score, y = predict(prin_comp)[,1], xlab = "Score", ylab = "Proyección PC1")
+```
+
+A continuación se grafican un biplot, la cual es una superposición de 2 gráficas: una gráfica de loadings, donde se puede visualizar la influencia de cada atributo sobre los primeros 2 componentes principales, y cada uno de los datos del dataframe proyectados en el espacio generado por los componentes principales 1 y 2.
+
+De la gráfica de loadings, también se puede ver que las pruebas donde se mide el desempeño en términos de distancia influye significativamente en el PC1 en la dirección negativa. Mientra que las pruebas de carrera influyen en el PC1 en la dirección contraria, formando así, dos grupos de pruebas que se pueden ponderar.
+
+```{r}
+autoplot(prin_comp, data = d, loadings = TRUE, loadings.colour = 'blue', loadings.label = TRUE, loadings.label.size = 3)
+```
+
+La forma de ponderar las pruebas de acuerdo al componente principal 1 tiene sentido ya que para las pruebas highjump, longjump y shot mientras más grande sea este valor mejor será el score, mientras que para las pruebas de tiempo, entre menor sea su valor, mejor será el desempeño en dicha prueba. Esta relación inversa es capturada por el signo de las entradas del PC1, haciendo que la competidora con el mejor desempeño, tenga la proyección sobre PC1 más negativa.
+
+También cabe notar que la prueba javelin o lanzamiento de javalina aunque se inclina del lado de las pruebas de distancia, parece casi no estar correlacionada a ninguna prueba. Esto se puede visualizar con un scatterplot.
+
+```{r}
+plot(d)
+```
+
+Finalmente, se puede notar que hay un valor atípico, cuyo valor en PC1 es cercano a 0.6. Dicho dato corresponde a la competidora Launa. Visualizando un boxplot por prueba, vemos que hay algunos valores atípicos, lo cual se nota más para la prueba de carrera de 800 metros (run800m)
+
+```{r}
+boxplot(d)
+```
+
+Obteniendo los puntajes máximos y mínimos para cada prueba y comparándolo con la competidora Launa, vemos que para las pruebas hurdles y run800m tiene los tiempos más altos. Mientras que en las pruebas de distancia highjump y longjump tiene los puntajes más bajos. Esto nos ayuda a corroborar que este dato es atípico y tendría que hacerse otro análisis para ver que tanto puede afectar dicho dato para aplicar PCA.
+
+```{r}
+sapply(d, max)
+sapply(d, min)
+```
+```{r}
+d[25,]
+```
