@@ -1,0 +1,67 @@
+---
+title: "Apéndice. Código R"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+Se realiza una reducción de dimensionalidad mediante Isomap a 2D y se grafica el resultado.
+
+```{r}
+library(vegan)
+
+data <- read.table("hepatlon (1)")
+dis <- vegdist(data[-8])
+iso <- isomap(dis, k = 4, ndim = 2)
+plot(x = iso$points[,1], y = iso$points[,2], main="heptlaton isomap")
+text(x = iso$points[,1], y = iso$points[,2], labels=rownames(iso$points),
+     cex=0.7, adj=c(0.5,1.4), xpd=NA)
+```
+
+Se comparan los datos proyectados en la primer dimensión obtenida mediante Isomap y se compara con el Score de las competidoras.
+
+```{r}
+plot(x = iso$points[,1], y = data$score, xlab="Dimensión 1", ylab="Score")
+```
+
+Se realiza prueba de correlación para cuantificarla.
+
+```{r}
+library("ggpubr")
+cor.test(iso$points[,1], data$score, method="spearman")
+```
+
+Se realiza una reducción de dimensionalidad mediante SOM a 2D y se grafica el resultado.
+
+```{r}
+library(kohonen)
+
+data_scale <- scale(data)
+data_som <- som(as.matrix(data_scale), somgrid(2,1))
+plot(data_som, type = "codes")
+```
+
+Se muestra la matriz de codes
+
+```{r}
+data_som$codes[[1]]
+```
+
+Se comparan los datos proyectados en la dirección del primer renglón de la matriz de codes y se compara con el Score de las competidoras.
+
+```{r}
+data_scale <- scale(data[-8])
+data_m <- as.matrix(data[-8])
+data_som <- som(as.matrix(data_scale), somgrid(2,1))
+som_proj <- data_m %*% data_som$codes[[1]][1,]
+plot(x = data$score, y = som_proj, xlab = "Score", ylab = "Proyección dimensión 1")
+```
+
+Se comparan las entradas del primer componente principal de PCA con el primer vector de la matriz de codes.
+
+```{r}
+prin_comp <- prcomp(data[-8], scale = TRUE, center = TRUE)
+plot(-data_som$codes[[1]][1,], type = "o", col="red", ylab="Value")
+lines(prin_comp$rotation[,1], type = "o")
+legend("topright", legend = c("SOM", "PCA"), col = c("red", "black"), lty = 1:2, cex = 0.8)
+```
