@@ -56,7 +56,15 @@ plot(usair_pc$scores[,1:2], type = "n", xlim = xlim, ylim = xlim)
 lab <- cutree(cc, h = 1.6)
 text(usair_pc$scores[,1:2], labels = lab, cex = 0.6)
 
-# K-means
+boxplot(subset(USairpollution, manu < 1500)$SO2~lab,
+        main="Mean S02 per group",
+        xlab="Group number",
+        ylab="Mean S02",
+        col="cadetblue3",
+        border="black"
+)
+
+# K-means 
 
 rge <- sapply(usair.data, function(x) diff(range(x)))
 usair.data_s <- sweep(usair.data, 2, rge, FUN = "/")
@@ -75,3 +83,11 @@ km <- kmeans(usair.data_s, centers=3)
 pr <- prcomp(usair.data_s)$x[, 1:2]
 plot(pr)
 text(pr, labels=km$cluster, cex=0.75, pos=2, col="red")
+
+boxplot(subset(USairpollution, manu < 1500)$SO2~km$cluster,
+        main="Mean S02 per group",
+        xlab="Group number",
+        ylab="Mean S02",
+        col="cadetblue3",
+        border="black"
+)
