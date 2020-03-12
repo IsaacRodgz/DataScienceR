@@ -2,31 +2,41 @@ library(MVA)
 library(mclust)
 
 # Load data
-
 data("USairpollution")
+
+# Remove SO2 feature
 usair.data <- USairpollution[-1]
+s02.data <- usair.data$
 
+# Visualize data
 pairs(usair.data, lower.panel = NULL, main="US air pollution")
-subset(usair.data, manu > 1500)
 
+# Obtain outlier data
+subset(usair.data, manu > 2000)
+
+# Visualize outlier
 pch <- rep("o", nrow(usair.data))
-pch[c(7,30)] <- "+"
+pch[7] <- "+"
 col <- rep("black", nrow(usair.data))
-col[c(7,30)] <- "red"
+col[7] <- "red"
 pairs(usair.data, lower.panel = NULL, main="US air pollution", pch=pch, col=col)
 
-usair.data <- subset(usair.data, manu < 1500)
-usair.data <- scale(usair.data ,center=FALSE, scale=TRUE)
+# Remove outlier
+usair.data <- subset(usair.data, manu < 2000)
+
+# Standardize dataset
+rge <- sapply(usair.data, function(x) diff(range(x)))
+usair.data <- sweep(usair.data, 2, rge, FUN = "/")
 
 # EM clustering
-
 mc <- Mclust(usair.data)
 summary(mc)
 groups <- mc$classification
 
+# Visualize clustering of EM with PCA
 pr <- prcomp(usair.data)$x[, 1:2]
-plot(pr)
-text(pr, labels=groups, cex=0.75, pos=2, col="red")
+plot(pr, col=groups)
+#text(pr, labels=groups, cex=0.75, pos=2, col=groups)
 
 for (i in 1:length(unique(groups))) {
   group.names <- names(groups[groups==i])
