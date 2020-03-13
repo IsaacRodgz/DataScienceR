@@ -6,7 +6,7 @@ data("USairpollution")
 
 # Remove SO2 feature
 usair.data <- USairpollution[-1]
-s02.data <- usair.data$
+s02.data <- USairpollution
 
 # Visualize data
 pairs(usair.data, lower.panel = NULL, main="US air pollution")
@@ -23,6 +23,8 @@ pairs(usair.data, lower.panel = NULL, main="US air pollution", pch=pch, col=col)
 
 # Remove outlier
 usair.data <- subset(usair.data, manu < 2000)
+s02.data <- subset(s02.data, manu < 2000)
+s02.data <- s02.data$SO2
 
 # Standardize dataset
 rge <- sapply(usair.data, function(x) diff(range(x)))
@@ -36,7 +38,7 @@ groups <- mc$classification
 # Visualize clustering of EM with PCA
 pr <- prcomp(usair.data)$x[, 1:2]
 plot(pr, col=groups)
-#text(pr, labels=groups, cex=0.75, pos=2, col=groups)
+text(pr, labels=rownames(usair.data), cex=0.75, pos=2, xpd=NA)
 
 for (i in 1:length(unique(groups))) {
   group.names <- names(groups[groups==i])
@@ -45,7 +47,7 @@ for (i in 1:length(unique(groups))) {
   cat(sprintf(fmt = "\nMean SO2 for group %s: %s\n\n", i, mean(group.SO2)))
 }
 
-boxplot(subset(USairpollution, manu < 1500)$SO2~groups,
+boxplot(s02.data~groups,
         main="Mean S02 per group",
         xlab="Group number",
         ylab="Mean S02",
@@ -63,10 +65,10 @@ plot(cc <- hclust(dm, method = "complete"))
 usair_pc <- princomp(dm, cor = TRUE)
 xlim <- range(usair_pc$scores[,1])
 plot(usair_pc$scores[,1:2], type = "n", xlim = xlim, ylim = xlim)
-lab <- cutree(cc, h = 1.6)
+lab <- cutree(cc, h = 1.2)
 text(usair_pc$scores[,1:2], labels = lab, cex = 0.6)
 
-boxplot(subset(USairpollution, manu < 1500)$SO2~lab,
+boxplot(s02.data~lab,
         main="Mean S02 per group",
         xlab="Group number",
         ylab="Mean S02",
