@@ -1,6 +1,8 @@
 library(MVA)
 library(mclust)
 
+set.seed(5)
+
 # Load data
 data("USairpollution")
 
@@ -47,6 +49,7 @@ for (i in 1:length(unique(groups))) {
   cat(sprintf(fmt = "\nMean SO2 for group %s: %s\n\n", i, mean(group.SO2)))
 }
 
+# Visualize boxplot of S02 values per group
 boxplot(s02.data~groups,
         main="Mean S02 per group",
         xlab="Group number",
@@ -62,12 +65,14 @@ plot(cs <- hclust(dm, method = "single"))
 plot(ca <- hclust(dm, method = "average"))
 plot(cc <- hclust(dm, method = "complete"))
 
+# Visualize hierarchical clustering with PCA
 usair_pc <- princomp(dm, cor = TRUE)
 xlim <- range(usair_pc$scores[,1])
 plot(usair_pc$scores[,1:2], type = "n", xlim = xlim, ylim = xlim)
 lab <- cutree(cc, h = 1.2)
 text(usair_pc$scores[,1:2], labels = lab, cex = 0.6)
 
+# Visualize boxplot of S02 values per group
 boxplot(s02.data~lab,
         main="Mean S02 per group",
         xlab="Group number",
@@ -78,25 +83,25 @@ boxplot(s02.data~lab,
 
 # K-means 
 
-rge <- sapply(usair.data, function(x) diff(range(x)))
-usair.data_s <- sweep(usair.data, 2, rge, FUN = "/")
-
-n <- nrow(usair.data_s)
+n <- nrow(usair.data)
 wss <- rep(0, 6)
-wss[1] <- (n-1)*sum(sapply(usair.data_s, var))
+wss[1] <- (n-1)*sum(sapply(usair.data, var))
 
 for (i in 2:6)
-  wss[i] <- sum(kmeans(usair.data_s, centers=i)$withinss)
+  wss[i] <- sum(kmeans(usair.data, centers=i)$withinss)
 
 plot(1:6, wss, type = "b", xlab = "Number of groups", ylab = "Within groups sum of squares")
 
-km <- kmeans(usair.data_s, centers=3)
+km <- kmeans(usair.data, centers=3)
+km.labels <- km$cluster
 
-pr <- prcomp(usair.data_s)$x[, 1:2]
-plot(pr)
-text(pr, labels=km$cluster, cex=0.75, pos=2, col="red")
+# Visualize clustering k means with PCA
+pr <- prcomp(usair.data)$x[, 1:2]
+plot(pr, col=km.labels)
+text(pr, labels=rownames(usair.data), cex=0.75, pos=2, xpd=NA)
 
-boxplot(subset(USairpollution, manu < 1500)$SO2~km$cluster,
+# Visualize boxplot of S02 values per group
+boxplot(s02.data~km.labels,
         main="Mean S02 per group",
         xlab="Group number",
         ylab="Mean S02",
