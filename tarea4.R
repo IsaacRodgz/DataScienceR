@@ -1,7 +1,11 @@
+# Tarea 4. Código R.
+
 library(ISLR)
 library(kernlab)
 library(tidyverse)
 library(reshape2)
+library(caret)
+library(class)
 
 # Carga datos
 car.data <- as_tibble(Auto)
@@ -12,7 +16,7 @@ str(car.data)
 summary(car.data)
 
 # Pairs plot
-car.data %>% select(-c(cylinders, origin, name)) %>% pairs(lower.panel = NULL, main="Vehicles information")
+car.data %>% select(-c(name)) %>% pairs(lower.panel = NULL, main="Vehicles information")
 
 # Se estandarizan las variables no categóricas debido a la variabilidad en los rangos
 scale2 <- function(x, na.rm = FALSE) (x - min(x, na.rm = na.rm)) / (max(x, na.rm = na.rm)-min(x, na.rm = na.rm))
@@ -55,13 +59,80 @@ ggplot(car.data, aes(x=origin)) + geom_bar(fill="steelblue") + theme_minimal() +
 # Además se pone el resto de atributos en variable X
 
 y <- car.data %>% mutate(mpg = ifelse(mpg <= 23, -1, ifelse(mpg > 23, 1, 0))) %>% select(mpg)
-y <- as.vector(y)
-X <-  car.data %>% select(-cylinders, -origin, -name, -mpg)
+y <- as.matrix(y)
+#X <-  car.data %>% select(-cylinders, -origin, -name, -mpg)
+X <-  car.data %>% select(weight, horsepower)
 X <- as.matrix(X)
 d <- cbind(X,y)
+d<-data.frame(X,y)
 
-# SVM
+# Partición de datos en entrenamiento y validación
+set.seed(123)
+training.samples <- d$mpg %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- d[training.samples,]
+validation.data <- d[-training.samples,]
 
-s<-ksvm(x=X, y=y, data=d, kernel="polydot", cost=1, kpar=list(degree=3,offset=0))
-s<-ksvm(x=X, y=y, data=d, kernel="rbfdot", C=10, kpar=list(sigma = 5))
+# Entrena SVM
+#s<-ksvm(mpg~horsepower+weight, data=train.data, kernel="polydot", C=0.01, kpar=list(degree = 2, offset = 1), type="C-svc")
+s<-ksvm(mpg~horsepower+weight, data=train.data, kernel="rbfdot", C=0.1, kpar=list(sigma = 1), type="C-svc")
+
+# Visualiza clasificador
+plot(s, data = train.data[,c("weight","horsepower")])
 s
+
+# Evalua Accuracy en dataset de validación
+predictions <- predict(s, validation.data[,c("weight","horsepower")])
+mean(validation.data$mpg == predictions)
+table(validation.data$mpg, predictions)
+
+# Entrena SVM con 4 variables
+
+y <- car.data %>% mutate(mpg = ifelse(mpg <= 23, -1, ifelse(mpg > 23, 1, 0))) %>% select(mpg)
+y <- as.matrix(y)
+X <-  car.data %>% select(-cylinders, -origin, -name, -mpg, -year)
+X <- as.matrix(X)
+d <- cbind(X,y)
+d<-data.frame(X,y)
+
+# Partición de datos en entrenamiento y validación
+set.seed(123)
+training.samples <- d$mpg %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- d[training.samples,]
+validation.data <- d[-training.samples,]
+
+s<-ksvm(mpg~horsepower+weight+displacement+acceleration, data=train.data, kernel="rbfdot", C=0.5, kpar=list(sigma = 1), type="C-svc")
+
+predictions <- predict(s, validation.data[,c("weight","horsepower","displacement","acceleration")])
+mean(validation.data$mpg == predictions)
+
+# Entrena k-NN
+
+y <- car.data %>% mutate(mpg = ifelse(mpg <= 23, -1, ifelse(mpg > 23, 1, 0))) %>% select(mpg)
+y <- as.matrix(y)
+X <-  car.data %>% select(-cylinders, -origin, -name, -mpg, -year)
+X <- as.matrix(X)
+d <- cbind(X,y)
+d<-data.frame(X,y)
+
+# Partición de datos en entrenamiento y validación
+set.seed(123)
+training.samples <- d$mpg %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- d[training.samples,]
+validation.data <- d[-training.samples,]
+
+vars_x <- c("weight", "horsepower", "displacement", "acceleration")
+train <- train.data[,vars_x]
+test <- validation.data[,vars_x]
+cl <- train.data[,c("mpg")]
+
+acc_knn <- c()
+for(i in 1:78){
+  pred <- knn3Train(train, test, cl, k=i, prob = FALSE, use.all = TRUE)
+  pred <- as.matrix(as.numeric(pred))
+  acc_knn <- c(acc_knn, mean(validation.data$mpg == pred))
+}
+acc_knn <- as.matrix(acc_knn)
+plot(acc_knn)
