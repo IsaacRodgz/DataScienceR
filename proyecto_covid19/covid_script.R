@@ -2,6 +2,9 @@ library(tidyverse)
 library(tidymodels)
 library(magrittr)
 library(ggthemes)
+library(stargazer)
+library(mclust)
+library(factoextra)
 
 # ------------------
 # Data preprocessing
@@ -315,7 +318,7 @@ covid.data %>%
 # Porcentajes comorbilidades para Positivo SARS-CoV-2 y Hospitalizado
 
 covid.data %>% 
-  filter(RESULTADO == "Positivo SARS-CoV-2" & TIPO_PACIENTE == "HOSPITALIZADO") %>%
+  filter(RESULTADO == "Positivo SARS-CoV-2" & TIPO_PACIENTE == "HOSPITALIZADO" & FALLECIDO == "1") %>%
   select(OTRO_CASO) %>%
   data.matrix() %>%
   mean()
@@ -333,6 +336,29 @@ comorbilidades_freq <- tribble(
   "RENAL_CRONICA", 0.046,
   "TABAQUISMO", 0.086,
   "OTRO_CASO", 0.14
+)
+
+comorbilidades_freq %>%
+  ggplot(aes(x=reorder(comorbilidad, -porcentaje), y=porcentaje)) +
+  geom_bar(stat="identity", colour="black", fill="steelblue", width = 0.3) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Comorbilidad") +
+  labs(y = "Porcentaje")
+
+comorbilidades_freq <- tribble(
+  ~comorbilidad,         ~porcentaje,
+  "DIABETES", 0.38,
+  "EPOC", 0.055,
+  "ASMA", 0.022,
+  "INMUSUPR", 0.031,
+  "HIPERTENSION", 0.42,
+  "OTRAS_COM", 0.046,
+  "CARDIOVASCULAR", 0.056,
+  "OBESIDAD", 0.26,
+  "RENAL_CRONICA", 0.07,
+  "TABAQUISMO", 0.094,
+  "OTRO_CASO", 0.11
 )
 
 comorbilidades_freq %>%
@@ -361,7 +387,7 @@ train_test_split <- initial_split(covid.data)
 covid.train <- training(train_test_split)
 covid.test <- testing(train_test_split)
 
-covid.recipe = recipe(FALLECIDO ~ EDAD + INTUBADO + NEUMONIA + DIABETES
+covid.recipe = recipe(FALLECIDO ~ EDAD + DIABETES
                       + EPOC + ASMA + INMUSUPR + HIPERTENSION + OTRA_COM +
                         CARDIOVASCULAR + OBESIDAD + RENAL_CRONICA + TABAQUISMO + 
                         OTRO_CASO, data = covid.train)
@@ -374,11 +400,11 @@ covid.train.prep = bake(prepped.recipe, covid.train)
 covid.test.prep = bake(prepped.recipe, covid.test)
 
 
-# Model
+# Saturated Model
 
 covid.lr.model = logistic_reg(mode = "classification") %>%
   set_engine("glm") %>% 
-  fit(FALLECIDO ~ EDAD + INTUBADO + NEUMONIA + DIABETES
+  fit(FALLECIDO ~ EDAD + DIABETES
       + EPOC + ASMA + INMUSUPR + HIPERTENSION + OTRA_COM +
         CARDIOVASCULAR + OBESIDAD + RENAL_CRONICA + TABAQUISMO + 
         OTRO_CASO, data = covid.train.prep)
@@ -393,3 +419,87 @@ covid.lr.model %>%
 # Analyze results
 
 summary(covid.lr.model$fit)
+
+# Reduced Model
+
+covid.recipe = recipe(FALLECIDO ~ EDAD + DIABETES +
+                        INMUSUPR + HIPERTENSION +
+                        OBESIDAD + RENAL_CRONICA + 
+                        OTRO_CASO, data = covid.train)
+
+model.recipe.steps = covid.recipe %>%
+  step_mutate(FALLECIDO = as.factor(FALLECIDO))
+prepped.recipe = prep(model.recipe.steps, training = covid.train)
+
+covid.train.prep = bake(prepped.recipe, covid.train)
+covid.test.prep = bake(prepped.recipe, covid.test)
+
+
+# Model
+
+covid.lr.model = logistic_reg(mode = "classification") %>%
+  set_engine("glm") %>% 
+  fit(FALLECIDO ~ EDAD + DIABETES +
+        INMUSUPR + HIPERTENSION +
+        OBESIDAD + RENAL_CRONICA + 
+        OTRO_CASO, data = covid.train.prep)
+
+# Evaluation metrics
+
+covid.lr.model %>%
+  predict(covid.test.prep) %>%
+  bind_cols(covid.test.prep) %>%
+  metrics(truth = FALLECIDO, estimate = .pred_class)
+
+# Analyze results
+
+summary(covid.lr.model$fit)
+
+#-----
+# PCA 
+#-----
+
+pr = covid.data %>%
+  select(DIABETES, EPOC, ASMA, INMUSUPR, HIPERTENSION,
+         OTRA_COM, CARDIOVASCULAR, OBESIDAD, RENAL_CRONICA,
+         TABAQUISMO) %>%
+  prcomp()
+
+plot(pr, type = "l")
+plot(cumsum(pr$sdev[1:11]^2)/sum(pr$sdev^2), xlab = "Num of PC", ylab = "Explained variance", type = "b")
+summary(pr)
+
+# PC1
+plot(pr$rotation[,1])
+text(pr$rotation[,1], labels=names(pr$rotation[,1]), cex=0.75, pos=1, xpd=NA)
+
+# PC2
+plot(pr$rotation[,2])
+text(pr$rotation[,2], labels=names(pr$rotation[,2]), cex=0.75, pos=1, xpd=NA)
+
+fviz_pca_var(pr,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+)
+
+# Data PCA
+
+covid.data.pca = pr$x[,1:2]
+
+# K-Means clustering on PCA
+
+n <- nrow(covid.data.pca)
+wss <- rep(0, 8)
+wss[1] <- (n-1)*sum(sapply(covid.data.pca, var))
+
+for (i in 2:8)
+  wss[i] <- sum(kmeans(covid.data.pca, centers=i)$withinss)
+
+plot(1:8, wss, type = "b", xlab = "Number of groups", ylab = "Within groups sum of squares")
+
+km <- kmeans(covid.data.pca, centers=6)
+km.labels <- km$cluster
+
+# Visualize clustering k means with PCA
+plot(covid.data.pca, col=km.labels)
