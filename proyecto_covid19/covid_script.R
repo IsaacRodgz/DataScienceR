@@ -5,6 +5,7 @@ library(ggthemes)
 library(stargazer)
 library(mclust)
 library(factoextra)
+library(rpart.plot)
 
 # ------------------
 # Data preprocessing
@@ -199,8 +200,10 @@ covid.data = covid.data %>%
   mutate(RENAL_CRONICA = ifelse(RENAL_CRONICA == "SI", 1.0, 0.0)) %>%
   mutate(TABAQUISMO = ifelse(TABAQUISMO == "SI", 1.0, 0.0)) %>%
   mutate(OTRO_CASO = ifelse(OTRO_CASO == "SI", 1.0, 0.0)) %>%
-  mutate(INTUBADO = ifelse(OTRO_CASO == "SI", 1.0, 0.0)) %>%
-  mutate(NEUMONIA = ifelse(OTRO_CASO == "SI", 1.0, 0.0))
+  mutate(INTUBADO = ifelse(INTUBADO == "SI", 1.0, 0.0)) %>%
+  mutate(NEUMONIA = ifelse(NEUMONIA == "SI", 1.0, 0.0)) %>%
+  mutate(UCI = ifelse(UCI == "SI", 1.0,
+               ifelse(UCI == "NO", 0.0, 2.0)))
 
 # Crea variable binaria FALLECIDO que indica si el paciente tiene fecha de defunción
 
@@ -373,9 +376,9 @@ comorbilidades_freq %>%
 # Modeling
 # --------
 
----------------------
+#---------------------
 # Logistic Regression
----------------------
+#---------------------
 # Se busca modelar la probabilidad de que un paciente fallezca
 # y buscar que variables son más informativas para la modelación
 
@@ -383,7 +386,9 @@ set.seed(42)
 
 # Preprocessing
 
-train_test_split <- initial_split(covid.data)
+covid.data.positive = covid.data %>%
+  filter(RESULTADO == "Positivo SARS-CoV-2" & TIPO_PACIENTE == "HOSPITALIZADO")
+train_test_split <- initial_split(covid.data.positive)
 covid.train <- training(train_test_split)
 covid.test <- testing(train_test_split)
 
@@ -423,7 +428,7 @@ summary(covid.lr.model$fit)
 # Reduced Model
 
 covid.recipe = recipe(FALLECIDO ~ EDAD + DIABETES +
-                        INMUSUPR + HIPERTENSION +
+                        HIPERTENSION +
                         OBESIDAD + RENAL_CRONICA + 
                         OTRO_CASO, data = covid.train)
 
@@ -440,8 +445,8 @@ covid.test.prep = bake(prepped.recipe, covid.test)
 covid.lr.model = logistic_reg(mode = "classification") %>%
   set_engine("glm") %>% 
   fit(FALLECIDO ~ EDAD + DIABETES +
-        INMUSUPR + HIPERTENSION +
-        OBESIDAD + RENAL_CRONICA + 
+        HIPERTENSION +
+        OBESIDAD + RENAL_CRONICA +
         OTRO_CASO, data = covid.train.prep)
 
 # Evaluation metrics
@@ -460,6 +465,15 @@ summary(covid.lr.model$fit)
 #-----
 
 pr = covid.data %>%
+  filter(RESULTADO == "Positivo SARS-CoV-2" & TIPO_PACIENTE == "HOSPITALIZADO") %>%
+  select(DIABETES, EPOC, ASMA, INMUSUPR, HIPERTENSION,
+         OTRA_COM, CARDIOVASCULAR, OBESIDAD, RENAL_CRONICA,
+         TABAQUISMO) %>%
+  prcomp()
+
+pr = covid.data %>%
+  filter(RESULTADO == "Positivo SARS-CoV-2" & TIPO_PACIENTE == "HOSPITALIZADO") %>%
+  filter(UCI == 1) %>%
   select(DIABETES, EPOC, ASMA, INMUSUPR, HIPERTENSION,
          OTRA_COM, CARDIOVASCULAR, OBESIDAD, RENAL_CRONICA,
          TABAQUISMO) %>%
@@ -503,3 +517,178 @@ km.labels <- km$cluster
 
 # Visualize clustering k means with PCA
 plot(covid.data.pca, col=km.labels)
+
+#-----------------
+# Análisis tiempos
+#-----------------
+
+# Casteo de fechas
+covid.data = covid.data %>%
+  mutate(FECHA_INGRESO=as.Date(FECHA_INGRESO, format = "%d.%m.%Y"))
+
+covid.data = covid.data %>%
+  mutate(FECHA_SINTOMAS=as.Date(FECHA_SINTOMAS, format = "%d.%m.%Y"))
+
+# Crea variable DIAS_INGRESO
+covid.data = covid.data %>%
+  mutate(DIAS_INGRESO = as.numeric(FECHA_INGRESO - FECHA_SINTOMAS))
+
+# Crea variable MES
+covid.data = covid.data %>% 
+  mutate(MES= format(FECHA_INGRESO, "%m")) %>%
+  mutate(MES = ifelse(MES == "01", "Enero",
+               ifelse(MES == "02", "Febrero",
+               ifelse(MES == "03", "Marzo",
+               ifelse(MES == "04", "Abril",
+               ifelse(MES == "05", "Mayo", ""))))))
+
+covid.data.cdmx = covid.data %>%
+  filter(ENTIDAD_UM == "CIUDAD DE MÉXICO" & ENTIDAD_RES == "CIUDAD DE MÉXICO") %>%
+  filter(RESULTADO == "Positivo SARS-CoV-2")
+
+# Boxplot DIAS by TIPO_PACIENTE
+covid.data.cdmx %>%
+  ggplot(aes(x=factor(TIPO_PACIENTE), y=DIAS_INGRESO)) +
+  geom_boxplot() +
+  theme_light() +
+  labs(x = "Tipo de paciente") +
+  labs(y = "Número de días")
+
+# Histogram DIAS
+covid.data.cdmx %>%
+  filter(TIPO_PACIENTE == "HOSPITALIZADO") %>%
+  ggplot(aes(x = DIAS_INGRESO)) +
+  geom_bar(stat = "count", colour="black", fill="steelblue") +
+  labs(x = "Dias hasta ingreso") +
+  theme_light()
+
+# Boxplot DIAS by TIPO PACIENTE grouped by MES
+covid.data.cdmx %>%
+  ggplot(aes(x=factor(TIPO_PACIENTE), y=DIAS_INGRESO, fill=factor(MES, levels=c("Febrero", "Marzo", "Abril", "Mayo")))) +
+  geom_boxplot() +
+  theme_light() +
+  labs(x = "Tipo de paciente") +
+  labs(y = "Número de días") +
+  labs(fill = "Mes de registro")
+
+#-----------------
+# Decision Tree
+#-----------------
+
+
+set.seed(42)
+
+# Preprocessing
+
+covid.data.cdmx = covid.data %>%
+  filter(ENTIDAD_UM == "CIUDAD DE MÉXICO" & ENTIDAD_RES == "CIUDAD DE MÉXICO") %>%
+  filter(RESULTADO == "Positivo SARS-CoV-2" & TIPO_PACIENTE == "HOSPITALIZADO")
+
+train_test_split <- initial_split(covid.data.cdmx)
+covid.train <- training(train_test_split)
+covid.test <- testing(train_test_split)
+
+covid.recipe = recipe(FALLECIDO ~ EDAD + DIABETES
+                      + EPOC + ASMA + INMUSUPR + HIPERTENSION + OTRA_COM +
+                        CARDIOVASCULAR + OBESIDAD + RENAL_CRONICA + TABAQUISMO + 
+                        OTRO_CASO + UCI + DIAS_INGRESO + INTUBADO + NEUMONIA, data = covid.train)
+
+model.recipe.steps = covid.recipe %>%
+  step_mutate(FALLECIDO = as.factor(FALLECIDO))
+prepped.recipe = prep(model.recipe.steps, training = covid.train)
+
+covid.train.prep = bake(prepped.recipe, covid.train)
+covid.test.prep = bake(prepped.recipe, covid.test)
+
+
+# Model
+
+covid.dt.model = decision_tree(mode = "classification") %>%
+  set_engine("rpart") %>% 
+  fit(FALLECIDO ~ EDAD + DIABETES
+      + EPOC + ASMA + INMUSUPR + HIPERTENSION + OTRA_COM +
+        CARDIOVASCULAR + OBESIDAD + RENAL_CRONICA + TABAQUISMO + 
+        OTRO_CASO + UCI + DIAS_INGRESO + INTUBADO + NEUMONIA, data = covid.train.prep)
+
+# Evaluation metrics
+
+covid.dt.model %>%
+  predict(covid.test.prep) %>%
+  bind_cols(covid.test.prep) %>%
+  metrics(truth = FALLECIDO, estimate = .pred_class)
+
+# Analyze results
+
+summary(covid.dt.model$fit)
+rpart.plot(covid.dt.model$fit)
+
+#----------------
+# Bayesian Search
+#----------------
+
+covid.recipe = recipe(FALLECIDO ~ EDAD + DIABETES
+                      + EPOC + ASMA + INMUSUPR + HIPERTENSION + OTRA_COM +
+                        CARDIOVASCULAR + OBESIDAD + RENAL_CRONICA + TABAQUISMO + 
+                        OTRO_CASO + DIAS_INGRESO + NEUMONIA, data = covid.train)
+
+model.recipe.steps = covid.recipe %>%
+  step_mutate(FALLECIDO = as.factor(FALLECIDO))
+prepped.recipe = prep(model.recipe.steps, training = covid.train)
+
+covid.train.prep = bake(prepped.recipe, covid.train)
+covid.test.prep = bake(prepped.recipe, covid.test)
+
+covid.dt.model = decision_tree(mode = "classification",
+                        min_n = tune(),
+                        cost_complexity = tune()) %>%
+  set_engine("rpart")
+
+folds <- vfold_cv(covid.train.prep, repeats = 2)
+
+tree.wflow =
+  workflow() %>%
+  add_model(covid.dt.model) %>%
+  add_recipe(model.recipe.steps)
+
+tree.set <- parameters(tree.wflow)
+
+search_res =
+  tune_bayes(
+    tree.wflow, 
+    resamples = folds,
+    param_info = tree.set,
+    initial = 5,
+    iter = 30,
+    metrics = metric_set(accuracy),
+    control = control_bayes(no_improve = 10, verbose = TRUE)
+  )
+
+estimates = collect_metrics(search_res) %>% arrange(.iter)
+
+show_best(search_res, metric = "accuracy")
+autoplot(search_res, type = "performance")
+
+# Model fitting after hyperparameter tuning
+
+optim.params <- show_best(search_res, metric = "accuracy")[1,]
+
+final_rec <- 
+  model.recipe.steps %>%
+  finalize_recipe(optim.params) %>%
+  prep()
+
+model.tuned <-
+  covid.dt.model %>%
+  finalize_model(optim.params) %>%
+  fit(FALLECIDO ~ EDAD + DIABETES
+      + EPOC + ASMA + INMUSUPR + HIPERTENSION + OTRA_COM +
+        CARDIOVASCULAR + OBESIDAD + RENAL_CRONICA + TABAQUISMO + 
+        OTRO_CASO + DIAS_INGRESO + NEUMONIA, data = covid.train.prep)
+
+model.tuned %>%
+  predict(covid.test.prep) %>%
+  bind_cols(covid.test.prep) %>%
+  metrics(truth = FALLECIDO, estimate = .pred_class)
+
+summary(model.tuned$fit)
+rpart.plot(model.tuned$fit, roundint = FALSE)
